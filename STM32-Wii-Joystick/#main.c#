@@ -1,0 +1,249 @@
+/* main.c --- 
+ * 
+ * Filename: main.c
+ * Description: 
+ * Author: 
+ * Maintainer: 
+ * Created: Thu Jan 10 11:23:43 2013
+ * Last-Updated: 
+ *           By: 
+ *     Update #: 0
+ * Keywords: 
+ * Compatibility: 
+ * 
+ */
+
+/* Commentary: 
+ * 
+ * 
+ * 
+ */
+
+/* Change log:
+ * 
+ * 
+ */
+/* Code: */
+
+#include <stm32f30x.h>  // Pull in include files for F30x standard drivers 
+#include <f3d_led.h>
+#include <f3d_uart.h>
+#include <f3d_gyro.h>
+#include <f3d_lcd_sd.h>
+#include <f3d_i2c.h>
+#include <f3d_accel.h>
+#include <f3d_nunchuk.h>
+#include <f3d_rtc.h>
+#include <ff.h>
+#include <diskio.h>
+#include <stdio.h>
+#include <f3d_delay.h>
+
+
+//#include <math.h>
+//#include <f3d_mag.h>
+
+
+//BMP File structures (Lab Manual listing 12.3, p . 187)
+
+struct bmpfile_magic {
+  unsigned char magic[2];
+};
+
+struct bmpfile_header {
+  uint32_t filesz;
+  uint16_t creator1;
+  uint16_t creator2;
+  uint32_t bmp_offset;
+};
+
+typedef struct {
+  uint32_t header_sz;
+  uint32_t width;
+  uint32_t height;
+  uint16_t nplanes;
+  uint16_t bitspp;
+  uint32_t compress_type;
+  uint32_t bmp_bytesz;
+  int32_t hres;
+  int32_t vres;
+  uint32_t ncolors;
+  uint32_t nimpcolors;
+} BITMAPINFOHEADER;
+
+struct bmppixel {//little endian
+  uint8_t b;
+  uint8_t g;
+  uint8_t r;
+};
+
+
+void die (FRESULT rc) {
+  printf("Failed with rc=%u.\n", rc);
+  while (1);
+}
+
+FATFS Fatfs;		/* File system object */
+FIL Fil;		/* File object */
+BYTE Buff[128];		/* File read buffer */
+
+struct bmpfile_magic magic;
+struct bmpfile_header header;
+BITMAPINFOHEADER info;
+struct bmppixel bmppixel;  
+
+void draw_bmp(char *names);
+void calc(float adata[], float mdata[]);
+void rotate(void);
+
+int main(void) {
+
+  /*
+  float adata[3];
+  float mdata[3];
+  */
+
+ 
+  char footer[20];
+  int count=0;
+  int i;
+  int x, y;
+  uint16_t color;
+
+  FRESULT rc;			/* Result code */
+  DIR dir;			/* Directory object */
+  FILINFO fno;			/* File information object */
+  UINT bw, br;
+  unsigned int retval;
+
+  setvbuf(stdin, NULL, _IONBF, 0);
+  setvbuf(stdout, NULL, _IONBF, 0);
+  setvbuf(stderr, NULL, _IONBF, 0);
+
+  f3d_uart_init();
+  f3d_lcd_init();
+  f3d_delay_init();
+  f3d_rtc_init();
+  
+  f3d_i2c1_init();
+  delay(10);
+  //f3d_accel_init();
+  //delay(10);
+  //f3d_mag_init();
+  //delay(10);
+  f3d_nunchuk_init();
+  delay(10);
+  
+  f_mount(0, &Fatfs);		/* Register volume work area (never fails) */  
+
+  nunchuk_t ndata;
+  char *bmp_names[] = {"1.BMP","2.BMP","3.BMP"};
+  uint8_t index = 0;
+  draw_bmp(bmp_names[index]);
+  while(1) {
+    f3d_nunchuk_read(&ndata);
+ if (ndata.c == 1) {
+     index++;
+     index = index % 3;
+     draw_bmp(bmp_names[index]);
+   }
+   if (ndata.z == 1) {
+     index--;
+     if (index < 0) {
+       index = 0;
+     }
+     index = index % 3;
+     draw_bmp(bmp_names[index]);
+   }
+  }
+}
+
+void draw_bmp(char *name) {
+  FRESULT rc;			// Result code 
+  UINT br;
+  int x,y;
+  uint16_t color;
+  f3d_lcd_fillScreen(0x0000);
+  rc = f_open(&Fil, name , FA_READ);//why isn't the flag set to OPEN_EXISTING? 
+  if (rc) die(rc);
+  rc = f_read(&Fil, &magic, sizeof magic, &br);//moving forward 2 bytes
+ 
+  rc = f_read(&Fil, &header, sizeof header, &br);//reading file size and offset...
+  if (rc) die(rc);
+  rc = f_read(&Fil, Buff, header.bmp_offset, &br);//advancing to the pixel array
+  if (rc) die(rc);
+  
+  for (y = 160; y > 0; y--) {
+    for (x = 0; x < 128; x++) {
+      f_read(&Fil, &bmppixel, sizeof bmppixel, &br);
+      color = ((bmppixel.r >> 3) << 11);
+      color += ((bmppixel.g >> 2) << 5);
+      color += (bmppixel.b >> 3 & 0x1F);
+      f3d_lcd_drawPixel(x, y, color);
+    }
+  }
+
+  rc = f_close(&Fil);
+  if (rc) die(rc);
+}
+
+  /*
+  int index = 0;
+  float heading_start = calc(adata,mdata);
+  float heading_current;
+  draw_bmp(names[index]);
+  f3d_lcd_fillScreen(0x0000);
+ while (1) {
+   f3d_nunchuk_read(&ndata);
+   f3d_accel_read(adata);
+  
+   }
+   heading_current = calc(adata,mdata);
+   if ((heading_current + heading_start >= 80) | (heading_current + heading_start <= -80))
+     {
+     rotate();
+     }
+   heading_start = heading_current;
+ }
+}
+
+float calc(float adata[], float mdata[]) {
+  float board_pitch;
+  float board_roll;
+  float board_yaw;
+  float xh, yh, heading;
+
+  //read F3 board data
+  f3d_accel_read(adata);
+  f3d_mag_read(mdata);
+
+  //F3 board tilt values
+  board_pitch = asin(adata[0]/9.81);      
+ 
+  board_roll = asin(adata[1]/9.81);
+ 
+  board_yaw = asin(adata[2]/9.81);
+ 
+  
+  //F3 heading calculation
+  xh = mdata[0]*cos(board_pitch) + mdata[2]*sin(board_pitch);
+  yh = mdata[0]*sin(board_roll)*sin(board_pitch)+ mdata[1]*cos(board_roll);
+  heading = (atan2(yh, xh) * 180) / M_PI;
+  
+  return heading;
+}
+
+void rotate(void) {
+  
+}
+  */
+
+#ifdef USE_FULL_ASSERT
+void assert_failed(uint8_t* file, uint32_t line) {
+/* Infinite loop */
+/* Use GDB to find out why we're here */
+  while (1);
+}
+#endif
+
+/* main.c ends here */
