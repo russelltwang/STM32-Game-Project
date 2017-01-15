@@ -1,0 +1,73 @@
+/*Filename: enemy.c
+ *Part of:C335 final project
+ *Created By:Michael Ledesma<mledesma> and Russell Wang <ruswang>
+ *On:04/20/2014
+ *Last Modified by:Michael Ledesma
+ *On:04/24/2014
+ */
+
+#include "enemy.h"
+
+int y,x;
+
+uint8_t sprite[10][6] = {
+  {0,1,1,1,1,0},
+  {0,1,1,1,1,0},
+  {0,1,1,1,1,0},
+  {0,0,1,1,0,0},
+  {1,1,1,1,1,1},
+  {1,1,1,1,1,1},
+  {1,1,1,1,1,1},
+  {0,0,1,1,0,0},
+  {0,0,1,1,0,0},
+  {0,1,1,1,1,0}
+};
+
+
+void pace_enemy_y(enemy *target, int steps) {
+  int i;
+    for (i = 0; i <= steps; i++) {
+      move_enemy(target,'u');
+      delay(10);
+    }
+    for (i = 0; i <= steps; i++) {
+      move_enemy(target,'d');
+    }
+}
+
+
+
+void move_enemy(enemy *target, char direction) {
+  for (y = 0; y<=9;y++) {
+    for (x = 0; x<=5;x++) {
+      if (sprite[y][x]) {
+	f3d_lcd_drawPixel(x+target->xcoord,y+target->ycoord,BLACK);
+      }
+    }
+  }
+  switch (direction) {
+  case 'r':
+    if (target->xcoord != 120)
+    target->xcoord+= 1;
+    break;
+  case 'l':
+    if (target->xcoord != 0)
+    target->xcoord-= 1;
+    break;
+  case 'u':
+    if (target->ycoord != 0)
+    target->ycoord-= 1;
+    break;
+  case 'd':
+    if (target->ycoord != 150)
+    target->ycoord+= 1;
+    break;
+  }
+  for (y = 0; y<=9;y++) {
+    for (x = 0; x<=5;x++) {
+      if (sprite[y][x]) {
+	f3d_lcd_drawPixel(x+target->xcoord,y+target->ycoord,RED);
+      }
+    }
+  }
+ }
